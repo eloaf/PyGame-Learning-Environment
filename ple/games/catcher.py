@@ -129,7 +129,7 @@ class Catcher(base.PyGameWrapper):
 
     """
 
-    def __init__(self, width=64, height=64, init_lives=3):
+    def __init__(self, width=42, height=42, init_lives=3):
 
         actions = {
             "left": K_a,
