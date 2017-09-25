@@ -10,6 +10,8 @@ from .utils import percent_round_int
 from pygame.constants import K_w, K_a, K_s, K_d
 from .primitives import Player, Creep
 
+GOOD = 0
+BAD = 1
 
 class WaterWorld(PyGameWrapper):
     """
@@ -30,9 +32,9 @@ class WaterWorld(PyGameWrapper):
     """
 
     def __init__(self,
-                 width=48,
-                 height=48,
-                 num_creeps=3):
+                 width=42,
+                 height=42,
+                 num_creeps=6):
 
         actions = {
             "up": K_w,
@@ -48,6 +50,8 @@ class WaterWorld(PyGameWrapper):
         self.CREEP_COLORS = [(40, 140, 40), (150, 95, 95)]
         radius = percent_round_int(width, 0.047)
         self.CREEP_RADII = [radius, radius]
+        self.rewards['positive'] = 1.
+        self.rewards['negative'] = -1.
         self.CREEP_REWARD = [
             self.rewards["positive"],
             self.rewards["negative"]]
@@ -66,6 +70,12 @@ class WaterWorld(PyGameWrapper):
         self.dy = 0
         self.player = None
         self.creeps = None
+
+        self.n_steps = 0
+        self.n_steps_list = []
+        self.rewards["tick"] = -0.001 # life decaying penalty
+        self.rewards["win"] = 0.
+        self.rewards["loss"] = -0.
 
     def _handle_player_events(self):
         self.dx = 0
@@ -90,8 +100,10 @@ class WaterWorld(PyGameWrapper):
                 if key == self.actions["down"]:
                     self.dy += self.AGENT_SPEED
 
-    def _add_creep(self):
-        creep_type = self.rng.choice([0, 1])
+    def _add_creep(self, creep_type=None):
+        # creep_type: 0:good, 1:bad
+        if creep_type is None:
+            creep_type = self.rng.choice([0, 1])
 
         creep = None
         pos = (0, 0)
@@ -164,13 +176,13 @@ class WaterWorld(PyGameWrapper):
 
     def game_over(self):
         """
-            Return bool if the game has 'finished'
+        Return bool if the game has 'finished'
         """
         return (self.creep_counts['GOOD'] == 0)
 
     def init(self):
         """
-            Starts/Resets the game to its inital state
+        Starts/Resets the game to its inital state
         """
         self.creep_counts = {"GOOD": 0, "BAD": 0}
 
@@ -191,11 +203,15 @@ class WaterWorld(PyGameWrapper):
             self.creeps.empty()
 
         for i in range(self.N_CREEPS):
-            self._add_creep()
+            # NOTE: here I control the number of good and bad
+            #creep_type = GOOD if i <= (self.N_CREEPS / 3) else BAD
+            #self._add_creep(creep_type=creep_type)
+            self._add_creep(i % 2)
 
         self.score = 0
         self.ticks = 0
         self.lives = -1
+        self.n_steps = 0
 
     def step(self, dt):
         """
@@ -206,17 +222,23 @@ class WaterWorld(PyGameWrapper):
 
         self.score += self.rewards["tick"]
 
+        self.n_steps += 1
+
         self._handle_player_events()
         self.player.update(self.dx, self.dy, dt)
 
         hits = pygame.sprite.spritecollide(self.player, self.creeps, True)
         for creep in hits:
-            self.creep_counts[creep.TYPE] -= 1
             self.score += creep.reward
-            self._add_creep()
+            if creep.TYPE == "GOOD":
+                self.creep_counts[creep.TYPE] -= 1  # remove only if hitting with a "good" one
+            else:
+                self._add_creep(creep_type=BAD)  # XXX: modified by sungjin
 
         if self.creep_counts["GOOD"] == 0:
             self.score += self.rewards["win"]
+            self.n_steps_list.append(self.n_steps)
+            avg_steps = float(sum(self.n_steps_list[-20:]) / len(self.n_steps_list[-20:]))
 
         self.creeps.update(dt)
 
